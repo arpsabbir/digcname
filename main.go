@@ -1,9 +1,8 @@
-
 package main
 
 import (
-	"bytes"
 	"bufio"
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -70,8 +69,14 @@ func readSubdomainsFromFile(filename string) ([]string, error) {
 }
 
 func main() {
+	if len(os.Args) < 2 {
+		log.Fatalf("Usage: %s <subdomains-file>", os.Args[0])
+	}
+
+	filename := os.Args[1]
+
 	// Read subdomains from the file
-	subdomains, err := readSubdomainsFromFile("subdomains.txt")
+	subdomains, err := readSubdomainsFromFile(filename)
 	if err != nil {
 		log.Fatalf("Failed to read subdomains from file: %v", err)
 	}
