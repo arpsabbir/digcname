@@ -29,10 +29,15 @@ func checkCNAMERecords(subdomains []string) (map[string]string, error) {
 // getCNAMERecord performs the dig command to get the CNAME record for a single subdomain.
 func getCNAMERecord(subdomain string) (string, error) {
 	cmd := exec.Command("dig", "+short", "CNAME", subdomain)
-	var out bytes.Buffer
+	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+
 	err := cmd.Run()
 	if err != nil {
+		if strings.Contains(stderr.String(), "status: NXDOMAIN") {
+			return "NXDOMAIN", nil
+		}
 		return "", fmt.Errorf("error executing dig command for %s: %v", subdomain, err)
 	}
 
