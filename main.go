@@ -110,12 +110,13 @@ func readLinesFromFile(filename string) ([]string, error) {
 }
 
 func main() {
-	if len(os.Args) < 3 {
-		log.Fatalf("Usage: %s <subdomains-file> <patterns-file>", os.Args[0])
+	if len(os.Args) < 4 {
+		log.Fatalf("Usage: %s <subdomains-file> <patterns-file> <result-file>", os.Args[0])
 	}
 
 	subdomainsFile := os.Args[1]
 	patternsFile := os.Args[2]
+	resultFile := os.Args[3]
 
 	// Read subdomains and patterns from the respective files
 	subdomains, err := readLinesFromFile(subdomainsFile)
@@ -134,12 +135,22 @@ func main() {
 		log.Fatalf("Failed to check CNAME records: %v", err)
 	}
 
-	// Output the results
-	for subdomain, record := range results {
-		status := "No"
-		if record.IsVulnerable {
-			status = "Yes"
-		}
-		fmt.Printf("Subdomain: %s, CNAME: %s, Vulnerable: %s\n", subdomain, record.CNAME, status)
+	// Write the results to the result file, only those marked as vulnerable
+	file, err := os.Create(resultFile)
+	if err != nil {
+		log.Fatalf("Failed to create result file: %v", err)
 	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	for subdomain, record := range results {
+		if record.IsVulnerable {
+			_, err := fmt.Fprintf(writer, "Subdomain: %s, CNAME: %s, Vulnerable: Yes\n", subdomain, record.CNAME)
+			if err != nil {
+				log.Fatalf("Failed to write to result file: %v", err)
+			}
+		}
+	}
+
+	writer.Flush()
 }
