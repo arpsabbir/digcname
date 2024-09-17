@@ -11,23 +11,30 @@ import (
 )
 
 // checkCNAMERecords takes a list of subdomains and returns a map where the keys are subdomain names
-// and the values are CNAME records (if any). If a subdomain does not have a CNAME record, its value is empty.
-func checkCNAMERecords(subdomains []string) (map[string]string, error) {
-	results := make(map[string]string)
+// and the values are structs containing CNAME records and DNS status information.
+func checkCNAMERecords(subdomains []string) (map[string]Record, error) {
+	results := make(map[string]Record)
 
 	for _, subdomain := range subdomains {
-		cname, err := getCNAMERecord(subdomain)
+		record, err := getCNAMERecord(subdomain)
 		if err != nil {
 			return nil, err
 		}
-		results[subdomain] = cname
+		results[subdomain] = record
 	}
 
 	return results, nil
 }
 
+// Record holds the details for each DNS query, including CNAME record and DNS status.
+type Record struct {
+	CNAME  string
+	Status string
+	Detail string
+}
+
 // getCNAMERecord performs the dig command to get the CNAME record for a single subdomain.
-func getCNAMERecord(subdomain string) (string, error) {
+func getCNAMERecord(subdomain string) (Record, error) {
 	cmd := exec.Command("dig", "+short", "CNAME", subdomain)
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
@@ -35,18 +42,35 @@ func getCNAMERecord(subdomain string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		if strings.Contains(stderr.String(), "status: NXDOMAIN") {
-			return "NXDOMAIN", nil
-		}
-		return "", fmt.Errorf("error executing dig command for %s: %v", subdomain, err)
+		return Record{}, fmt.Errorf("error executing dig command for %s: %v", subdomain, err)
 	}
 
-	cname := strings.TrimSpace(out.String())
-	if cname == "" {
-		return "No CNAME record", nil
+	output := strings.TrimSpace(out.String())
+	stderrOutput := stderr.String()
+
+	// Check if stderr contains NXDOMAIN
+	if strings.Contains(stderrOutput, "status: NXDOMAIN") {
+		return Record{
+			CNAME:  "",
+			Status: "NXDOMAIN",
+			Detail: "Status: NXDOMAIN",
+		}, nil
 	}
 
-	return cname, nil
+	// Check for CNAME records
+	if output == "" {
+		return Record{
+			CNAME:  "",
+			Status: "NO CNAME",
+			Detail: "Status: noerror",
+		}, nil
+	}
+
+	return Record{
+		CNAME:  output,
+		Status: "CNAME FOUND",
+		Detail: "Status: noerror",
+	}, nil
 }
 
 // readSubdomainsFromFile reads subdomains from a text file and returns them as a slice of strings.
@@ -93,7 +117,7 @@ func main() {
 	}
 
 	// Output the results
-	for subdomain, cname := range results {
-		fmt.Printf("Subdomain: %s, CNAME: %s\n", subdomain, cname)
+	for subdomain, record := range results {
+		fmt.Printf("Subdomain: %s, CNAME: %s, STATUS: %s, Detail: %s\n", subdomain, record.CNAME, record.Status, record.Detail)
 	}
 }
