@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -16,9 +17,9 @@ type Record struct {
 	IsVulnerable bool
 }
 
-// checkCNAMERecords takes a list of subdomains and patterns, and returns a map where the keys are subdomain names
-// and the values are Records containing CNAME records and whether they are vulnerable based on wildcard domain matching.
-func checkCNAMERecords(subdomains []string, patterns []string) (map[string]Record, error) {
+// checkCNAMERecords takes a list of subdomains, patterns, and an io.Writer for output.
+// It returns a map where the keys are subdomain names and the values are Records containing CNAME records and whether they are vulnerable based on wildcard domain matching.
+func checkCNAMERecords(subdomains []string, patterns []string, output io.Writer) (map[string]Record, error) {
 	results := make(map[string]Record)
 
 	for _, subdomain := range subdomains {
@@ -35,11 +36,11 @@ func checkCNAMERecords(subdomains []string, patterns []string) (map[string]Recor
 			IsVulnerable: isVulnerable,
 		}
 
-		// Output the result to the terminal
+		// Output the result to the writer
 		if isVulnerable {
-			fmt.Printf("Subdomain: %s, CNAME: %s, Vulnerable: Yes\n", subdomain, cname)
+			fmt.Fprintf(output, "Subdomain: %s, CNAME: %s, Vulnerable: Yes\n", subdomain, cname)
 		} else {
-			fmt.Printf("Subdomain: %s, CNAME: %s, Vulnerable: No\n", subdomain, cname)
+			fmt.Fprintf(output, "Subdomain: %s, CNAME: %s, Vulnerable: No\n", subdomain, cname)
 		}
 	}
 
@@ -136,28 +137,16 @@ func main() {
 		log.Fatalf("Failed to read patterns from file: %v", err)
 	}
 
-	// Check CNAME records for the subdomains with the given patterns
-	results, err := checkCNAMERecords(subdomains, patterns)
-	if err != nil {
-		log.Fatalf("Failed to check CNAME records: %v", err)
-	}
-
-	// Write the results to the result file, only those marked as vulnerable
+	// Open the result file for writing
 	file, err := os.Create(resultFile)
 	if err != nil {
 		log.Fatalf("Failed to create result file: %v", err)
 	}
 	defer file.Close()
 
-	writer := bufio.NewWriter(file)
-	for subdomain, record := range results {
-		if record.IsVulnerable {
-			_, err := fmt.Fprintf(writer, "Subdomain: %s, CNAME: %s, Vulnerable: Yes\n", subdomain, record.CNAME)
-			if err != nil {
-				log.Fatalf("Failed to write to result file: %v", err)
-			}
-		}
+	// Check CNAME records for the subdomains with the given patterns and write results to the file
+	_, err = checkCNAMERecords(subdomains, patterns, file)
+	if err != nil {
+		log.Fatalf("Failed to check CNAME records: %v", err)
 	}
-
-	writer.Flush()
 }
