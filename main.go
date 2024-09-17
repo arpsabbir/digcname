@@ -10,83 +10,79 @@ import (
 	"strings"
 )
 
-// checkCNAMERecords takes a list of subdomains and returns a map where the keys are subdomain names
-// and the values are structs containing CNAME records and DNS status information.
-func checkCNAMERecords(subdomains []string) (map[string]Record, error) {
+// Record holds the details for each DNS query, including CNAME record and matching status.
+type Record struct {
+	CNAME      string
+	IsVulnerable bool
+}
+
+// checkCNAMERecords takes a list of subdomains and patterns, and returns a map where the keys are subdomain names
+// and the values are Records containing CNAME records and whether they are vulnerable.
+func checkCNAMERecords(subdomains []string, patterns []string) (map[string]Record, error) {
 	results := make(map[string]Record)
 
 	for _, subdomain := range subdomains {
-		record, err := getCNAMERecord(subdomain)
+		cname, err := getCNAMERecord(subdomain)
 		if err != nil {
 			return nil, err
 		}
-		results[subdomain] = record
+
+		isVulnerable := matchesAnyPattern(cname, patterns)
+
+		results[subdomain] = Record{
+			CNAME:      cname,
+			IsVulnerable: isVulnerable,
+		}
 	}
 
 	return results, nil
 }
 
-// Record holds the details for each DNS query, including CNAME record and DNS status.
-type Record struct {
-	CNAME  string
-	Status string
-	Detail string
-}
-
 // getCNAMERecord performs the dig command to get the CNAME record for a single subdomain.
-func getCNAMERecord(subdomain string) (Record, error) {
+func getCNAMERecord(subdomain string) (string, error) {
 	cmd := exec.Command("dig", "+short", "CNAME", subdomain)
-	var out, stderr bytes.Buffer
+	var out bytes.Buffer
 	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-
 	err := cmd.Run()
 	if err != nil {
-		return Record{}, fmt.Errorf("error executing dig command for %s: %v", subdomain, err)
+		return "", fmt.Errorf("error executing dig command for %s: %v", subdomain, err)
 	}
 
-	output := strings.TrimSpace(out.String())
-	stderrOutput := stderr.String()
-
-	// Check if stderr contains NXDOMAIN
-	if strings.Contains(stderrOutput, "status: NXDOMAIN") {
-		return Record{
-			CNAME:  "",
-			Status: "NXDOMAIN",
-			Detail: "Status: NXDOMAIN",
-		}, nil
+	cname := strings.TrimSpace(out.String())
+	if cname == "" {
+		return "No CNAME record", nil
 	}
 
-	// Check for CNAME records
-	if output == "" {
-		return Record{
-			CNAME:  "",
-			Status: "NO CNAME",
-			Detail: "Status: noerror",
-		}, nil
-	}
-
-	return Record{
-		CNAME:  output,
-		Status: "CNAME FOUND",
-		Detail: "Status: noerror",
-	}, nil
+	return cname, nil
 }
 
-// readSubdomainsFromFile reads subdomains from a text file and returns them as a slice of strings.
-func readSubdomainsFromFile(filename string) ([]string, error) {
+// matchesAnyPattern checks if the CNAME record matches any of the given patterns.
+func matchesAnyPattern(cname string, patterns []string) bool {
+	if cname == "No CNAME record" {
+		return false
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(cname, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// readLinesFromFile reads lines from a text file and returns them as a slice of strings.
+func readLinesFromFile(filename string) ([]string, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file %s: %v", filename, err)
 	}
 	defer file.Close()
 
-	var subdomains []string
+	var lines []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		subdomain := strings.TrimSpace(scanner.Text())
-		if subdomain != "" {
-			subdomains = append(subdomains, subdomain)
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			lines = append(lines, line)
 		}
 	}
 
@@ -94,30 +90,40 @@ func readSubdomainsFromFile(filename string) ([]string, error) {
 		return nil, fmt.Errorf("error reading file %s: %v", filename, err)
 	}
 
-	return subdomains, nil
+	return lines, nil
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatalf("Usage: %s <subdomains-file>", os.Args[0])
+	if len(os.Args) < 3 {
+		log.Fatalf("Usage: %s <subdomains-file> <patterns-file>", os.Args[0])
 	}
 
-	filename := os.Args[1]
+	subdomainsFile := os.Args[1]
+	patternsFile := os.Args[2]
 
-	// Read subdomains from the file
-	subdomains, err := readSubdomainsFromFile(filename)
+	// Read subdomains and patterns from the respective files
+	subdomains, err := readLinesFromFile(subdomainsFile)
 	if err != nil {
 		log.Fatalf("Failed to read subdomains from file: %v", err)
 	}
 
-	// Check CNAME records for the subdomains
-	results, err := checkCNAMERecords(subdomains)
+	patterns, err := readLinesFromFile(patternsFile)
+	if err != nil {
+		log.Fatalf("Failed to read patterns from file: %v", err)
+	}
+
+	// Check CNAME records for the subdomains with the given patterns
+	results, err := checkCNAMERecords(subdomains, patterns)
 	if err != nil {
 		log.Fatalf("Failed to check CNAME records: %v", err)
 	}
 
 	// Output the results
 	for subdomain, record := range results {
-		fmt.Printf("Subdomain: %s, CNAME: %s, STATUS: %s, Detail: %s\n", subdomain, record.CNAME, record.Status, record.Detail)
+		status := "No"
+		if record.IsVulnerable {
+			status = "Yes"
+		}
+		fmt.Printf("Subdomain: %s, CNAME: %s, Vulnerable: %s\n", subdomain, record.CNAME, status)
 	}
 }
