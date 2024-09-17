@@ -34,6 +34,13 @@ func checkCNAMERecords(subdomains []string, patterns []string) (map[string]Recor
 			CNAME:       cname,
 			IsVulnerable: isVulnerable,
 		}
+
+		// Output the result to the terminal
+		if isVulnerable {
+			fmt.Printf("Subdomain: %s, CNAME: %s, Vulnerable: Yes\n", subdomain, cname)
+		} else {
+			fmt.Printf("Subdomain: %s, CNAME: %s, Vulnerable: No\n", subdomain, cname)
+		}
 	}
 
 	return results, nil
