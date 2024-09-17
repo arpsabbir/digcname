@@ -10,14 +10,14 @@ import (
 	"strings"
 )
 
-// Record holds the details for each DNS query, including CNAME record and matching status.
+// Record holds the details for each DNS query, including CNAME record and vulnerability status.
 type Record struct {
-	CNAME      string
+	CNAME       string
 	IsVulnerable bool
 }
 
 // checkCNAMERecords takes a list of subdomains and patterns, and returns a map where the keys are subdomain names
-// and the values are Records containing CNAME records and whether they are vulnerable.
+// and the values are Records containing CNAME records and whether they are vulnerable based on wildcard domain matching.
 func checkCNAMERecords(subdomains []string, patterns []string) (map[string]Record, error) {
 	results := make(map[string]Record)
 
@@ -27,10 +27,11 @@ func checkCNAMERecords(subdomains []string, patterns []string) (map[string]Recor
 			return nil, err
 		}
 
-		isVulnerable := matchesAnyPattern(cname, patterns)
+		wildcardDomain := extractWildcardDomain(cname)
+		isVulnerable := matchesAnyPattern(wildcardDomain, patterns)
 
 		results[subdomain] = Record{
-			CNAME:      cname,
+			CNAME:       cname,
 			IsVulnerable: isVulnerable,
 		}
 	}
@@ -56,13 +57,28 @@ func getCNAMERecord(subdomain string) (string, error) {
 	return cname, nil
 }
 
-// matchesAnyPattern checks if the CNAME record matches any of the given patterns.
-func matchesAnyPattern(cname string, patterns []string) bool {
+// extractWildcardDomain filters out only the wildcard domains from the CNAME record.
+func extractWildcardDomain(cname string) string {
 	if cname == "No CNAME record" {
+		return ""
+	}
+
+	// Remove the leading '*' if present
+	cname = strings.TrimSpace(cname)
+	if strings.HasPrefix(cname, "*.") {
+		cname = cname[2:] // Remove the "*." from the start
+	}
+
+	return cname
+}
+
+// matchesAnyPattern checks if the domain matches any of the given patterns.
+func matchesAnyPattern(domain string, patterns []string) bool {
+	if domain == "" {
 		return false
 	}
 	for _, pattern := range patterns {
-		if strings.Contains(cname, pattern) {
+		if strings.Contains(domain, pattern) {
 			return true
 		}
 	}
